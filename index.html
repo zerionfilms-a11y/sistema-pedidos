@@ -1,0 +1,63 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema Profissional</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="sidebar">
+  <h2>📊 Sistema</h2>
+  <button onclick="navegar('produtos')">Produtos</button>
+  <button onclick="navegar('orcamentos')">Orçamentos</button>
+  <button onclick="navegar('pedidos')">Pedidos</button>
+  <button onclick="navegar('despesas')">Despesas</button>
+  <button onclick="navegar('dashboard')">Dashboard</button>
+</div>
+
+<div class="main">
+
+<section id="produtos" class="pagina">
+  <h1>Produtos</h1>
+  <input id="nomeProduto" placeholder="Nome">
+  <input id="custoProduto" type="number" placeholder="Custo">
+  <input id="precoProduto" type="number" placeholder="Preço">
+  <button onclick="adicionarProduto()">Adicionar</button>
+  <ul id="listaProdutos"></ul>
+</section>
+
+<section id="orcamentos" class="pagina" style="display:none;">
+  <h1>Orçamentos</h1>
+  <input id="clienteOrc" placeholder="Cliente">
+  <button onclick="criarOrcamento()">Criar Orçamento</button>
+  <ul id="listaOrcamentos"></ul>
+</section>
+
+<section id="pedidos" class="pagina" style="display:none;">
+  <h1>Pedidos</h1>
+  <ul id="listaPedidos"></ul>
+</section>
+
+<section id="despesas" class="pagina" style="display:none;">
+  <h1>Despesas</h1>
+  <input id="descDespesa" placeholder="Descrição">
+  <input id="valorDespesa" type="number" placeholder="Valor">
+  <button onclick="adicionarDespesa()">Adicionar</button>
+  <ul id="listaDespesas"></ul>
+</section>
+
+<section id="dashboard" class="pagina" style="display:none;">
+  <h1>Dashboard</h1>
+  <p id="totalVendas"></p>
+  <p id="totalDespesas"></p>
+  <p id="lucroLiquido"></p>
+</section>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
