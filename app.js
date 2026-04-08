@@ -1,4 +1,3 @@
-
 // Helpers
 function uid(){return Date.now().toString(36) + Math.random().toString(36).slice(2,8)}
 function storageGet(k){return JSON.parse(localStorage.getItem(k)||'null')||[]}
@@ -136,22 +135,51 @@ function visualizarOrc(id){
   html += `</tbody></table><hr><div><strong>Subtotal:</strong> R$ ${o.subtotal.toFixed(2)}</div><div><strong>Desconto:</strong> ${o.desconto}%</div><div><strong>Total:</strong> R$ ${o.total.toFixed(2)}</div></div>`
   const pa = document.getElementById('printArea'); pa.innerHTML = html; window.open().document.write(html)
 }
+
+async function gerarPdfA4DoElemento(elemento, nomeArquivo) {
+  const { jsPDF } = window.jspdf;
+
+  const canvas = await html2canvas(elemento, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: "#ffffff"
+  });
+
+  const imgData = canvas.toDataURL("image/png");
+  const pdf = new jsPDF("p", "mm", "a4");
+
+  const margem = 10;
+  const pageWidth = 210 - margem * 2;
+  const pageHeight = 297 - margem * 2;
+
+  const imgWidth = pageWidth;
+  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+  let alturaRestante = imgHeight;
+  let posicaoY = margem;
+
+  pdf.addImage(imgData, "PNG", margem, posicaoY, imgWidth, imgHeight);
+  alturaRestante -= pageHeight;
+
+  while (alturaRestante > 0) {
+    posicaoY = alturaRestante - imgHeight + margem;
+    pdf.addPage();
+    pdf.addImage(imgData, "PNG", margem, posicaoY, imgWidth, imgHeight);
+    alturaRestante -= pageHeight;
+  }
+
+  pdf.save(nomeArquivo);
+}
+
 async function pdfOrc(id){
   const o = storageGet(KEYS.ORC).find(x=>x.id===id); if(!o) return alert('Orçamento não encontrado')
-  // montar HTML para printArea
   let html = `<div style="padding:12px;font-family:Arial;color:#000;background:#fff;width:800px">
       <h2>Orçamento ${o.numero}</h2><div><strong>Cliente:</strong> ${o.cliente}</div><div><strong>Telefone:</strong> ${o.telefone||''}</div><hr>
       <table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Produto</th><th>Qtd</th><th>Preço</th><th>Subtotal</th></tr></thead><tbody>`
   o.itens.forEach(it=>{ html += `<tr><td style="padding:6px 0">${it.nome}</td><td style="text-align:center">${it.qtd}</td><td style="text-align:right">R$ ${it.preco.toFixed(2)}</td><td style="text-align:right">R$ ${(it.preco*it.qtd).toFixed(2)}</td></tr>` })
   html += `</tbody></table><hr><div style="text-align:right"><div>Subtotal: R$ ${o.subtotal.toFixed(2)}</div><div>Desconto: ${o.desconto}%</div><div><strong>Total: R$ ${o.total.toFixed(2)}</strong></div></div></div>`
   const pa = document.getElementById('printArea'); pa.innerHTML = html
-  await html2canvas(pa, {scale:2}).then(canvas=>{
-    const imgData = canvas.toDataURL('image/jpeg', 1.0)
-    const { jsPDF } = window.jspdf
-    const pdf = new jsPDF({ orientation:'portrait', unit:'px', format:[canvas.width, canvas.height] })
-    pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height)
-    pdf.save(`${o.numero}.pdf`)
-  }).catch(e=>{ console.error(e); alert('Erro ao gerar PDF') })
+  await gerarPdfA4DoElemento(pa, `${o.numero}.pdf`)
 }
 
 function converterParaPedido(id){
@@ -191,19 +219,16 @@ function verPedido(id){
   s += `Total: R$ ${p.total.toFixed(2)}`
   alert(s)
 }
+
 async function pdfPedido(id){
   const p = storageGet(KEYS.PED).find(x=>x.id===id); if(!p) return alert('Pedido não encontrado')
-  let html = `<div style="padding:12px;font-family:Arial;color:#000;background:#fff;width:800px"><h2>Pedido ${p.numero}</h2><div><strong>Cliente:</strong> ${p.cliente}</div><hr><table style="width:100%"><thead><tr><th>Produto</th><th>Qtd</th><th>Preço</th><th>Subtotal</th></tr></thead><tbody>`
-  p.itens.forEach(it=> html += `<tr><td>${it.nome}</td><td style="text-align:center">${it.qtd}</td><td style="text-align:right">R$ ${it.preco.toFixed(2)}</td><td style="text-align:right">R$ ${(it.preco*it.qtd).toFixed(2)}</td></tr>`)
+  let html = `<div style="padding:12px;font-family:Arial;color:#000;background:#fff;width:800px">
+      <h2>Pedido ${p.numero}</h2><div><strong>Cliente:</strong> ${p.cliente}</div><hr>
+      <table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left">Produto</th><th>Qtd</th><th>Preço</th><th>Subtotal</th></tr></thead><tbody>`
+  p.itens.forEach(it=> html += `<tr><td style="padding:6px 0">${it.nome}</td><td style="text-align:center">${it.qtd}</td><td style="text-align:right">R$ ${it.preco.toFixed(2)}</td><td style="text-align:right">R$ ${(it.preco*it.qtd).toFixed(2)}</td></tr>`)
   html += `</tbody></table><hr><div style="text-align:right"><strong>Total: R$ ${p.total.toFixed(2)}</strong></div></div>`
   const pa = document.getElementById('printArea'); pa.innerHTML = html
-  await html2canvas(pa, {scale:2}).then(canvas=>{
-    const imgData = canvas.toDataURL('image/jpeg', 1.0)
-    const { jsPDF } = window.jspdf
-    const pdf = new jsPDF({ orientation:'portrait', unit:'px', format:[canvas.width, canvas.height] })
-    pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height)
-    pdf.save(`${p.numero}.pdf`)
-  }).catch(e=>{ console.error(e); alert('Erro ao gerar PDF') })
+  await gerarPdfA4DoElemento(pa, `${p.numero}.pdf`)
 }
 function excluirPedido(id){ if(!confirm('Excluir pedido?')) return; let pedidos = storageGet(KEYS.PED).filter(x=>x.id!==id); storageSet(KEYS.PED, pedidos); renderPedidos(); renderAll() }
 
