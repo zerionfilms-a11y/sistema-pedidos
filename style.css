@@ -1,0 +1,160 @@
+:root{
+  --bg:#0f1723;
+  --card:#0b1220;
+  --accent:#06b6d4;
+  --muted:#94a3b8;
+  --glass: rgba(255,255,255,0.03);
+  --line: rgba(255,255,255,0.08);
+  --success:#22c55e;
+  --warn:#f59e0b;
+  --danger:#ef4444;
+}
+*{box-sizing:border-box}
+body{
+  font-family:Inter, system-ui, Arial;
+  margin:0;
+  background:linear-gradient(180deg,#071126 0%, #071a27 100%);
+  color:#e6eef6;
+}
+button, input, select, textarea{font:inherit}
+.app{display:flex;min-height:100vh}
+.sidebar{
+  width:260px;
+  padding:24px;
+  background:var(--card);
+  border-right:1px solid rgba(255,255,255,0.03)
+}
+.sidebar h2{margin:0 0 12px;font-size:18px}
+.sidebar nav button{
+  display:block;
+  width:100%;
+  margin:8px 0;
+  padding:10px;
+  border:none;
+  background:transparent;
+  color:var(--muted);
+  text-align:left;
+  border-radius:10px;
+  cursor:pointer
+}
+.sidebar nav button:hover{background:var(--glass);color:#fff}
+.main{flex:1;padding:24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px}
+.primary{
+  background:var(--accent);
+  color:#012;
+  padding:10px 14px;
+  border:none;
+  border-radius:10px;
+  cursor:pointer;
+  font-weight:700
+}
+.primary:hover{filter:brightness(1.02)}
+.cards{display:flex;gap:12px;flex-wrap:wrap}
+.card{
+  background:rgba(255,255,255,0.02);
+  padding:16px;
+  border-radius:14px;
+  min-width:180px;
+  border:1px solid var(--line)
+}
+.card h3{margin:0 0 8px}
+.pagina{background:transparent;padding:8px 0;}
+.table{
+  width:100%;
+  border-collapse:collapse;
+  background:rgba(255,255,255,0.02);
+  border-radius:12px;
+  overflow:hidden
+}
+.table th,.table td{padding:10px;border-bottom:1px solid rgba(255,255,255,0.03);text-align:left;vertical-align:top}
+.table th{color:#cbd5e1;font-size:13px}
+.modal{
+  position:fixed;
+  inset:0;
+  background:rgba(2,6,23,0.6);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  z-index:100
+}
+.modal-content{
+  background:#071226;
+  padding:18px;
+  border-radius:16px;
+  min-width:320px;
+  color:#e6eef6;
+  border:1px solid var(--line);
+  box-shadow:0 20px 60px rgba(0,0,0,.3);
+  max-height:92vh;
+  overflow:auto
+}
+.modal-content.large{min-width:min(980px, 100%);}
+.modal-content label{
+  display:block;
+  margin:8px 0;
+  font-size:13px;
+  color:var(--muted)
+}
+.modal-content input, .modal-content textarea, .modal-content select{
+  width:100%;
+  padding:10px;
+  border-radius:10px;
+  border:1px solid rgba(255,255,255,0.08);
+  background:rgba(255,255,255,0.02);
+  color:inherit;
+  outline:none
+}
+.modal-content input::placeholder,
+.modal-content textarea::placeholder{color:#64748b}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row.between{justify-content:space-between}
+.actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;flex-wrap:wrap}
+.product-card{
+  background:rgba(255,255,255,0.02);
+  padding:12px;
+  border-radius:14px;
+  margin-bottom:10px;
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+  border:1px solid var(--line)
+}
+.small{font-size:13px;color:var(--muted)}
+.badge{
+  display:inline-flex;
+  align-items:center;
+  padding:4px 10px;
+  border-radius:999px;
+  font-size:12px;
+  margin-left:8px;
+  border:1px solid var(--line)
+}
+.badge.produzindo{background:rgba(245,158,11,.12);color:#fbbf24}
+.badge.produzido{background:rgba(34,197,94,.12);color:#86efac}
+.badge.enviado{background:rgba(6,182,212,.12);color:#67e8f9}
+.badge.finalizado{background:rgba(99,102,241,.12);color:#c4b5fd}
+.badge.pendente{background:rgba(148,163,184,.12);color:#cbd5e1}
+.order-meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:6px
+}
+.order-meta span{
+  font-size:12px;
+  color:#cbd5e1;
+  background:rgba(255,255,255,.03);
+  padding:4px 8px;
+  border-radius:999px
+}
+.grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.grid-4{display:grid;grid-template-columns:2fr .7fr 1.6fr auto;gap:10px;align-items:end}
+@media (max-width: 900px){
+  .app{flex-direction:column}
+  .sidebar{width:100%}
+  .grid-3,.grid-4{grid-template-columns:1fr}
+  .modal-content.large{min-width:100%}
+}
