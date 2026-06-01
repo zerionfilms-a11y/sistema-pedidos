@@ -251,13 +251,15 @@ function montarPaginasPdfEstruturadas(root){
 
 async function gerarPdfBytesDoHtml(html){
   const area = document.getElementById('printArea')
+  if(!area) throw new Error('Área de impressão não encontrada')
   area.innerHTML = html
+
+  // Dá tempo para o navegador montar o DOM antes do canvas
+  await new Promise(requestAnimationFrame)
   if (document.fonts && document.fonts.ready) {
     try { await document.fonts.ready } catch (_) {}
   }
 
-  const root = area.firstElementChild
-  const structured = root && root.querySelector && root.querySelector('.pdf-item-row')
   const { jsPDF } = window.jspdf
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true })
   const pageWidth = pdf.internal.pageSize.getWidth()
@@ -283,38 +285,56 @@ async function gerarPdfBytesDoHtml(html){
     pdf.addImage(imgData, 'PNG', margin, margin, usableWidth, Math.min(imgHeight, usableHeight), undefined, 'FAST')
   }
 
-  if (structured) {
+  const tryStructured = async () => {
+    const root = area.firstElementChild
+    const structured = !!(root && root.querySelector && root.querySelector('.pdf-item-row'))
+    if (!structured) return false
+
     const paginas = montarPaginasPdfEstruturadas(root)
     for (let i = 0; i < paginas.length; i++) {
+      area.innerHTML = ''
+      area.appendChild(paginas[i])
       await renderPageToPdf(paginas[i], i === 0)
     }
-    return pdf.output('arraybuffer')
+    area.innerHTML = ''
+    return true
   }
 
-  // Fallback antigo para HTMLs não estruturados
-  const canvas = await html2canvas(area, {
-    scale: 2,
-    useCORS: true,
-    backgroundColor: '#ffffff',
-    logging: false,
-    width: area.scrollWidth,
-    height: area.scrollHeight,
-    windowWidth: area.scrollWidth,
-    windowHeight: area.scrollHeight
-  })
-  const imgData = canvas.toDataURL('image/png')
-  const imgHeight = (canvas.height * usableWidth) / canvas.width
-  let heightLeft = imgHeight
-  let position = margin
-  pdf.addImage(imgData, 'PNG', margin, position, usableWidth, imgHeight, undefined, 'FAST')
-  heightLeft -= usableHeight
-  while (heightLeft > 0) {
-    position = margin - (imgHeight - heightLeft)
-    pdf.addPage()
+  try{
+    const structuredOk = await tryStructured()
+    if (structuredOk) return pdf.output('arraybuffer')
+  }catch(err){
+    console.error('Falha no render estruturado do PDF, usando fallback:', err)
+  }
+
+  // Fallback antigo para HTMLs não estruturados, ou quando o fluxo estruturado falha
+  try{
+    const canvas = await html2canvas(area, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: area.scrollWidth,
+      height: area.scrollHeight,
+      windowWidth: area.scrollWidth,
+      windowHeight: area.scrollHeight
+    })
+    const imgData = canvas.toDataURL('image/png')
+    const imgHeight = (canvas.height * usableWidth) / canvas.width
+    let heightLeft = imgHeight
+    let position = margin
     pdf.addImage(imgData, 'PNG', margin, position, usableWidth, imgHeight, undefined, 'FAST')
     heightLeft -= usableHeight
+    while (heightLeft > 0) {
+      position = margin - (imgHeight - heightLeft)
+      pdf.addPage()
+      pdf.addImage(imgData, 'PNG', margin, position, usableWidth, imgHeight, undefined, 'FAST')
+      heightLeft -= usableHeight
+    }
+    return pdf.output('arraybuffer')
+  }finally{
+    area.innerHTML = ''
   }
-  return pdf.output('arraybuffer')
 }
 async function gerarPdfA4DoHtml(html, nomeArquivo){
   const bytes = await gerarPdfBytesDoHtml(html)
@@ -826,8 +846,8 @@ async function pdfPedido(id){
   try{
     await gerarPdfA4DoHtml(html, `${p.numero}.pdf`)
   }catch(e){
-    console.error(e)
-    alert('Erro ao gerar PDF')
+    console.error('Erro ao gerar PDF do pedido:', e)
+    alert(e?.message || 'Erro ao gerar PDF do pedido')
   }
 }
 async function baixarNotaPedido(id){
@@ -1124,8 +1144,8 @@ async function pdfOrc(id){
   try{
     await gerarPdfA4DoHtml(html, `${o.numero}.pdf`)
   }catch(e){
-    console.error(e)
-    alert('Erro ao gerar PDF')
+    console.error('Erro ao gerar PDF do orçamento:', e)
+    alert(e?.message || 'Erro ao gerar PDF do orçamento')
   }
 }
 function excluirOrc(id){ if(!confirm('Excluir orçamento?')) return; let orcs = storageGet(KEYS.ORC).filter(x=>x.id!==id); storageSet(KEYS.ORC, orcs); renderAll() }
