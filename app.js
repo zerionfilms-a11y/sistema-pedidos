@@ -263,6 +263,7 @@ function construirPaginaPdfBase(root, rows, opts={}){
   }
 
   if (!primeiro) 
+    removerCabecalhoResumoDaPagina(page)
     inserirCabecalhoContinuacao(page)
   }
 
