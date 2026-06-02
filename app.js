@@ -262,7 +262,7 @@ function construirPaginaPdfBase(root, rows, opts={}){
     rows.forEach(row => tbody.appendChild(row.cloneNode(true)))
   }
 
-  if (!primeiro) 
+  if (!primeiro) {
     removerCabecalhoResumoDaPagina(page)
     inserirCabecalhoContinuacao(page)
   }
@@ -1015,7 +1015,7 @@ function montarHtmlDocumento(titulo, numero, cliente, extraInfoHtml, itens, subt
   const itensHtml = (itens || []).map(it => {
     const imagem = getImagemProdutoDoItem(it)
     const imgHtml = imagem ? `
-      <div style="width:100px;height:100px;border-radius:12px;overflow:hidden;background:#f3f4f6;border:1px solid #e5e7eb;flex:0 0 auto">
+      <div style="width:54px;height:54px;border-radius:12px;overflow:hidden;background:#f3f4f6;border:1px solid #e5e7eb;flex:0 0 auto">
         <img src="${escapeHtml(imagem)}" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">
       </div>` : `
       <div style="width:54px;height:54px;border-radius:12px;background:#f3f4f6;border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:#94a3b8;font-size:11px">Sem foto</div>`
