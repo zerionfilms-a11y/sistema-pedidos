@@ -1,7 +1,16 @@
 // Helpers
 function uid(){return Date.now().toString(36) + Math.random().toString(36).slice(2,8)}
 function storageGet(k){try{return JSON.parse(localStorage.getItem(k)||'null')||[]}catch(e){return []}}
-function storageSet(k,v){localStorage.setItem(k, JSON.stringify(v))}
+function storageSet(k,v){
+  try{
+    localStorage.setItem(k, JSON.stringify(v))
+  }catch(e){
+    if (e && (e.name === 'QuotaExceededError' || String(e.message||'').toLowerCase().includes('quota'))){
+      alert('O navegador ficou sem espaço. Vou tentar salvar uma versão mais leve dos dados.')
+    }
+    throw e
+  }
+}
 function navegar(page){
   document.querySelectorAll('.pagina').forEach(p=>p.style.display='none')
   const el = document.getElementById(page)
@@ -18,6 +27,28 @@ function escapeHtml(s=''){
 }
 function normalizePhone(v=''){ return String(v).replace(/\D/g,'') }
 function formatMoney(v){ return 'R$ ' + Number(v || 0).toFixed(2) }
+
+function compactarItemOrcamento(item){
+  if(!item) return item
+  const { imagem, ...resto } = item
+  return resto
+}
+function compactarOrcamento(o){
+  if(!o) return o
+  return {
+    ...o,
+    itens: Array.isArray(o.itens) ? o.itens.map(compactarItemOrcamento) : []
+  }
+}
+function limparOrcamentosArmazenados(){
+  const atuais = storageGet(KEYS.ORC)
+  const limpos = atuais.map(compactarOrcamento)
+  const antes = JSON.stringify(atuais)
+  const depois = JSON.stringify(limpos)
+  if (antes !== depois){
+    storageSet(KEYS.ORC, limpos)
+  }
+}
 
 const EMPRESA_INFO = {
   nome: 'MEMORIZE-SE',
@@ -167,12 +198,10 @@ async function copiarTexto(texto){
 }
 
 
-
 // Helper PDF
 const PDF_PAGE_WIDTH = 794
 const PDF_PAGE_HEIGHT = 1123
-const PDF_PAGE_RESERVED_BOTTOM_FIRST = 110
-const PDF_PAGE_RESERVED_BOTTOM_OTHER = 60
+const PDF_PAGE_RESERVED_BOTTOM = 150
 
 function criarHostPdfTemporario(){
   const host = document.createElement('div')
@@ -195,55 +224,18 @@ function aplicarExtrasDaPaginaPdf(pageEl, mostrarExtras){
   })
 }
 
-function removerCabecalhoResumoDaPagina(pageEl){
-  const filhos = Array.from(pageEl.children)
-  if (filhos[0]) filhos[0].remove()
-  if (filhos[1]) filhos[1].remove()
-}
-
-function inserirCabecalhoContinuacao(pageEl){
-  const table = pageEl.querySelector('.pdf-table')
-  if (!table) return
-
-  const banner = document.createElement('div')
-  banner.style.margin = '0 0 12px'
-  banner.style.padding = '10px 12px'
-  banner.style.border = '1px solid #e5e7eb'
-  banner.style.borderRadius = '12px'
-  banner.style.background = '#f8fafc'
-  banner.style.color = '#334155'
-  banner.style.fontSize = '12px'
-  banner.style.lineHeight = '1.35'
-  banner.innerHTML = '<strong>Continuação do documento</strong>'
-  pageEl.insertBefore(banner, table)
-}
-
-function construirPaginaPdfBase(root, rows, paginaTipo='first'){
+function construirPaginaPdfBase(root, rows, mostrarExtras){
   const page = root.cloneNode(true)
   page.style.width = PDF_PAGE_WIDTH + 'px'
+  page.style.minHeight = PDF_PAGE_HEIGHT + 'px'
   page.style.height = 'auto'
-  page.style.minHeight = '0px'
   page.style.background = '#fff'
-
   const tbody = page.querySelector('.pdf-table tbody')
   if (tbody) {
     tbody.innerHTML = ''
     rows.forEach(row => tbody.appendChild(row.cloneNode(true)))
   }
-
-  if (paginaTipo !== 'first') {
-    removerCabecalhoResumoDaPagina(page)
-    inserirCabecalhoContinuacao(page)
-  }
-
-  if (paginaTipo !== 'last') {
-    const footer = page.querySelector('.pdf-footer')
-    if (footer) footer.remove()
-    const obs = page.querySelector('.pdf-observacoes')
-    if (obs) obs.remove()
-  }
-
-  aplicarExtrasDaPaginaPdf(page, paginaTipo === 'last')
+  aplicarExtrasDaPaginaPdf(page, mostrarExtras)
   return page
 }
 
@@ -257,30 +249,31 @@ function montarPaginasPdfEstruturadas(root){
 
   while (idx < rows.length) {
     const currentRows = []
-    const isFirst = paginas.length === 0
-    const paginaTipo = isFirst ? 'first' : 'middle'
-    const reservedBottom = isFirst ? PDF_PAGE_RESERVED_BOTTOM_FIRST : PDF_PAGE_RESERVED_BOTTOM_OTHER
+    let pageEl = null
 
     while (idx < rows.length) {
       currentRows.push(rows[idx])
-      const pageEl = construirPaginaPdfBase(root, currentRows, paginaTipo)
+      pageEl = construirPaginaPdfBase(root, currentRows, false)
       host.innerHTML = ''
       host.appendChild(pageEl)
-
-      if (pageEl.scrollHeight > (PDF_PAGE_HEIGHT - reservedBottom)) {
+      const altura = pageEl.scrollHeight
+      if (altura > (PDF_PAGE_HEIGHT - PDF_PAGE_RESERVED_BOTTOM)) {
         currentRows.pop()
         if (!currentRows.length) {
           currentRows.push(rows[idx])
+          pageEl = construirPaginaPdfBase(root, currentRows, false)
+          host.innerHTML = ''
+          host.appendChild(pageEl)
           idx++
         }
         break
       }
-
       idx++
     }
 
     const isLast = idx >= rows.length
-    paginas.push(construirPaginaPdfBase(root, currentRows, isLast ? (isFirst ? 'first' : 'last') : paginaTipo))
+    const finalPage = construirPaginaPdfBase(root, currentRows, isLast)
+    paginas.push(finalPage)
   }
 
   host.remove()
@@ -289,84 +282,78 @@ function montarPaginasPdfEstruturadas(root){
 
 async function gerarPdfBytesDoHtml(html){
   const area = document.getElementById('printArea')
-  const previous = area.innerHTML
   area.innerHTML = html
+  if (document.fonts && document.fonts.ready) {
+    try { await document.fonts.ready } catch (_) {}
+  }
 
-  try {
-    if (document.fonts && document.fonts.ready) {
-      try { await document.fonts.ready } catch (_) {}
-    }
+  const root = area.firstElementChild
+  const structured = root && root.querySelector && root.querySelector('.pdf-item-row')
+  const { jsPDF } = window.jspdf
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true })
+  const pageWidth = pdf.internal.pageSize.getWidth()
+  const pageHeight = pdf.internal.pageSize.getHeight()
+  const margin = 10
+  const usableWidth = pageWidth - (margin * 2)
+  const usableHeight = pageHeight - (margin * 2)
 
-    const root = area.firstElementChild
-    const structured = root && root.querySelector && root.querySelector('.pdf-item-row')
-    const { jsPDF } = window.jspdf
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true })
-    const pageWidth = pdf.internal.pageSize.getWidth()
-    const pageHeight = pdf.internal.pageSize.getHeight()
-    const margin = 10
-    const usableWidth = pageWidth - (margin * 2)
-    const usableHeight = pageHeight - (margin * 2)
-
-    const renderPageToPdf = async (pageEl, firstPage=false) => {
-      const canvas = await html2canvas(pageEl, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        width: pageEl.scrollWidth,
-        height: pageEl.scrollHeight,
-        windowWidth: pageEl.scrollWidth,
-        windowHeight: pageEl.scrollHeight
-      })
-      const imgData = canvas.toDataURL('image/png')
-      const imgHeight = (canvas.height * usableWidth) / canvas.width
-      if (!firstPage) pdf.addPage()
-      pdf.addImage(imgData, 'PNG', margin, margin, usableWidth, Math.min(imgHeight, usableHeight), undefined, 'FAST')
-    }
-
-    if (structured) {
-      const paginas = montarPaginasPdfEstruturadas(root)
-      for (let i = 0; i < paginas.length; i++) {
-        area.innerHTML = ''
-        area.appendChild(paginas[i])
-        await renderPageToPdf(paginas[i], i === 0)
-      }
-      return pdf.output('arraybuffer')
-    }
-
-    const canvas = await html2canvas(area, {
+  const renderPageToPdf = async (pageEl, firstPage=false) => {
+    const canvas = await html2canvas(pageEl, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
       logging: false,
-      width: area.scrollWidth,
-      height: area.scrollHeight,
-      windowWidth: area.scrollWidth,
-      windowHeight: area.scrollHeight
+      width: pageEl.scrollWidth,
+      height: pageEl.scrollHeight,
+      windowWidth: pageEl.scrollWidth,
+      windowHeight: pageEl.scrollHeight
     })
     const imgData = canvas.toDataURL('image/png')
     const imgHeight = (canvas.height * usableWidth) / canvas.width
-    let heightLeft = imgHeight
-    let position = margin
+    if (!firstPage) pdf.addPage()
+    pdf.addImage(imgData, 'PNG', margin, margin, usableWidth, Math.min(imgHeight, usableHeight), undefined, 'FAST')
+  }
+
+  if (structured) {
+    const paginas = montarPaginasPdfEstruturadas(root)
+    for (let i = 0; i < paginas.length; i++) {
+      area.innerHTML = ''
+      area.appendChild(paginas[i])
+      await renderPageToPdf(paginas[i], i === 0)
+    }
+    area.innerHTML = ''
+    return pdf.output('arraybuffer')
+  }
+
+  // Fallback antigo para HTMLs não estruturados
+  const canvas = await html2canvas(area, {
+    scale: 2,
+    useCORS: true,
+    backgroundColor: '#ffffff',
+    logging: false,
+    width: area.scrollWidth,
+    height: area.scrollHeight,
+    windowWidth: area.scrollWidth,
+    windowHeight: area.scrollHeight
+  })
+  const imgData = canvas.toDataURL('image/png')
+  const imgHeight = (canvas.height * usableWidth) / canvas.width
+  let heightLeft = imgHeight
+  let position = margin
+  pdf.addImage(imgData, 'PNG', margin, position, usableWidth, imgHeight, undefined, 'FAST')
+  heightLeft -= usableHeight
+  while (heightLeft > 0) {
+    position = margin - (imgHeight - heightLeft)
+    pdf.addPage()
     pdf.addImage(imgData, 'PNG', margin, position, usableWidth, imgHeight, undefined, 'FAST')
     heightLeft -= usableHeight
-    while (heightLeft > 0) {
-      position = margin - (imgHeight - heightLeft)
-      pdf.addPage()
-      pdf.addImage(imgData, 'PNG', margin, position, usableWidth, imgHeight, undefined, 'FAST')
-      heightLeft -= usableHeight
-    }
-    return pdf.output('arraybuffer')
-  } finally {
-    area.innerHTML = previous
   }
+  return pdf.output('arraybuffer')
 }
-
 async function gerarPdfA4DoHtml(html, nomeArquivo){
   const bytes = await gerarPdfBytesDoHtml(html)
   downloadBlob(new Blob([bytes], {type:'application/pdf'}), nomeArquivo)
 }
-
 function getEmpresaFooterHtml(){
   return `
     <div class="pdf-footer" style="margin-top:26px;border-top:1px solid #d1d5db;padding-top:12px;font-size:11px;color:#374151;line-height:1.45">
@@ -574,32 +561,25 @@ function renderItensTempOrc(){
 function removerItemTempOrc(i){ itensTempOrc.splice(i,1); renderItensTempOrc() }
 function calcularTotalItensOrc(){ return itensTempOrc.reduce((s,it)=>s + it.produto.preco * it.qtd, 0) }
 function salvarOrcamento(){
-  try {
-    if(itensTempOrc.length===0){alert('Adicione ao menos 1 item'); return}
-    const cliente=document.getElementById('oCliente').value.trim()
-    const telefone=document.getElementById('oTelefone').value.trim()
-    const validade=document.getElementById('oValidade').value
-    const obs=document.getElementById('oObs').value
-    const desconto=parseFloat(document.getElementById('oDesconto').value)||0
-    const subtotal = calcularTotalItensOrc()
-    const total = +(subtotal * (1 - desconto/100)).toFixed(2)
-    const orc = {
-      id: uid(),
-      numero: gerarNumero('ORC'),
-      cliente, telefone, validade, obs, desconto, subtotal, total,
-      canal: 'whatsapp',
-      status:'pendente',
-      itens: itensTempOrc.map(i=>({produtoId:i.produto.id, nome:i.produto.nome, preco:i.produto.preco, custo:i.produto.custo, imagem:i.produto.imagem||'', qtd:i.qtd, obs:i.obs||''})),
-      data:new Date().toISOString()
-    }
-    const orcs = storageGet(KEYS.ORC); orcs.push(orc); storageSet(KEYS.ORC, orcs)
-    fecharModalOrcamento();
-    renderAll();
-    alert('Orçamento salvo!')
-  } catch (err) {
-    console.error('Falha ao salvar orçamento:', err)
-    alert(err?.message || 'Erro ao salvar orçamento')
+  if(itensTempOrc.length===0){alert('Adicione ao menos 1 item'); return}
+  const cliente=document.getElementById('oCliente').value.trim()
+  const telefone=document.getElementById('oTelefone').value.trim()
+  const validade=document.getElementById('oValidade').value
+  const obs=document.getElementById('oObs').value
+  const desconto=parseFloat(document.getElementById('oDesconto').value)||0
+  const subtotal = calcularTotalItensOrc()
+  const total = +(subtotal * (1 - desconto/100)).toFixed(2)
+  const orc = {
+    id: uid(),
+    numero: gerarNumero('ORC'),
+    cliente, telefone, validade, obs, desconto, subtotal, total,
+    canal: 'whatsapp',
+    status:'pendente',
+    itens: itensTempOrc.map(i=>({produtoId:i.produto.id, nome:i.produto.nome, preco:i.produto.preco, custo:i.produto.custo, qtd:i.qtd, obs:i.obs||''})),
+    data:new Date().toISOString()
   }
+  const orcs = storageGet(KEYS.ORC); orcs.push(orc); storageSet(KEYS.ORC, orcs)
+  fecharModalOrcamento(); renderAll()
 }
 
 // ------------------ PEDIDOS ------------------
@@ -1109,7 +1089,6 @@ function converterParaPedido(id){
       nome: i.nome,
       preco: i.preco,
       custo: i.custo,
-      imagem: i.imagem || getImagemProdutoDoItem(i),
       qtd: i.qtd,
       obs: i.obs || ''
     }))
@@ -1242,8 +1221,6 @@ function renderDashboard(){
 // ------------------ BACKUP ------------------
 function exportarBackup(){
   const data = {
-    versao: 3,
-    exportadoEm: new Date().toISOString(),
     produtos: storageGet(KEYS.PROD),
     orcamentos: storageGet(KEYS.ORC),
     pedidos: storageGet(KEYS.PED),
@@ -1255,7 +1232,7 @@ function exportarBackup(){
   a.href=url
   a.download='backup_sistema.json'
   a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  URL.revokeObjectURL(url)
 }
 function importarBackup(e){
   const file = e.target.files[0]
@@ -1263,24 +1240,22 @@ function importarBackup(e){
   const reader = new FileReader()
   reader.onload = (ev)=>{
     try{
-      const raw = String(ev.target.result || '').replace(/^﻿/, '').trim()
+      const raw = String(ev.target.result || '').replace(/^\uFEFF/, '').trim()
       if(!raw) throw new Error('Arquivo vazio')
       const obj = JSON.parse(raw)
-      const currentProdutos = storageGet(KEYS.PROD)
-      const currentOrcamentos = storageGet(KEYS.ORC)
-      const currentPedidos = storageGet(KEYS.PED)
-      const currentDespesas = storageGet(KEYS.DESP)
 
-      const produtos = Array.isArray(obj.produtos) ? obj.produtos : (Array.isArray(obj.products) ? obj.products : currentProdutos)
-      const orcamentos = Array.isArray(obj.orcamentos) ? obj.orcamentos : (Array.isArray(obj['orçamentos']) ? obj['orçamentos'] : currentOrcamentos)
-      const pedidos = Array.isArray(obj.pedidos) ? obj.pedidos : currentPedidos
-      const despesas = Array.isArray(obj.despesas) ? obj.despesas : currentDespesas
+      const produtos = Array.isArray(obj.produtos) ? obj.produtos : (Array.isArray(obj.products) ? obj.products : [])
+      const orcamentosOrig = Array.isArray(obj.orcamentos) ? obj.orcamentos : (Array.isArray(obj['orçamentos']) ? obj['orçamentos'] : [])
+      const pedidos = Array.isArray(obj.pedidos) ? obj.pedidos : []
+      const despesas = Array.isArray(obj.despesas) ? obj.despesas : []
+
+      const orcamentos = orcamentosOrig.map(compactarOrcamento)
 
       storageSet(KEYS.PROD, produtos)
       storageSet(KEYS.ORC, orcamentos)
       storageSet(KEYS.PED, pedidos)
       storageSet(KEYS.DESP, despesas)
-      alert('Backup importado com sucesso')
+      alert('Backup importado')
       renderAll()
     }catch(err){
       console.error('Falha ao importar backup:', err)
@@ -1292,22 +1267,20 @@ function importarBackup(e){
 
 // ------------------ RENDER / INIT ------------------
 function renderAll(){
-  const safe = (fn, label) => {
-    try { fn() } catch (err) { console.error('Erro ao renderizar ' + label + ':', err) }
-  }
-  safe(renderProdutos, 'produtos')
-  safe(renderOrcamentos, 'orçamentos')
-  safe(renderPedidos, 'pedidos')
-  safe(renderDespesas, 'despesas')
-  safe(renderDashboard, 'dashboard')
-  safe(() => renderProdutoSelect('oProdutoSelect'), 'select orçamento')
-  safe(() => renderProdutoSelect('pedProdutoSelect'), 'select pedido')
+  renderProdutos()
+  renderOrcamentos()
+  renderPedidos()
+  renderDespesas()
+  renderDashboard()
+  renderProdutoSelect('oProdutoSelect')
+  renderProdutoSelect('pedProdutoSelect')
 }
 function init(){
   if(!localStorage.getItem(KEYS.PROD)) storageSet(KEYS.PROD, [])
   if(!localStorage.getItem(KEYS.ORC)) storageSet(KEYS.ORC, [])
   if(!localStorage.getItem(KEYS.PED)) storageSet(KEYS.PED, [])
   if(!localStorage.getItem(KEYS.DESP)) storageSet(KEYS.DESP, [])
+  limparOrcamentosArmazenados()
   navegar('produtos')
 }
 init()
