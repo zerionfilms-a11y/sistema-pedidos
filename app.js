@@ -196,8 +196,11 @@ async function copiarTexto(texto){
 
 // Helper PDF
 
+// Helper PDF
 const PDF_PAGE_WIDTH = 794
 const PDF_PAGE_HEIGHT = 1123
+const PDF_PAGE_RESERVED_BOTTOM_FIRST = 140
+const PDF_PAGE_RESERVED_BOTTOM_OTHER = 110
 
 function criarHostPdfTemporario(){
   const host = document.createElement('div')
@@ -209,7 +212,6 @@ function criarHostPdfTemporario(){
   host.style.visibility = 'hidden'
   host.style.pointerEvents = 'none'
   host.style.zIndex = '-1'
-  host.style.contain = 'layout style paint'
   document.body.appendChild(host)
   return host
 }
@@ -222,7 +224,9 @@ function aplicarExtrasDaPaginaPdf(pageEl, mostrarExtras){
 }
 
 function removerCabecalhoResumoDaPagina(pageEl){
-  pageEl.querySelectorAll('.pdf-cabecalho, .pdf-resumo').forEach(el => el.remove())
+  const filhos = Array.from(pageEl.children)
+  if (filhos[0]) filhos[0].remove()
+  if (filhos[0]) filhos[0].remove()
 }
 
 function inserirCabecalhoContinuacao(pageEl){
@@ -242,52 +246,58 @@ function inserirCabecalhoContinuacao(pageEl){
   pageEl.insertBefore(banner, tableWrapper)
 }
 
-function montarPaginaPdfBase(root, rows, opts={}){
+const pdfMeasureCache = { base: new Map() }
+
+function medirAlturaPaginaBase(root, primeiro=false, ultimo=false){
+  const key = `${primeiro ? 1 : 0}-${ultimo ? 1 : 0}`
+  if (pdfMeasureCache.base.has(key)) return pdfMeasureCache.base.get(key)
+  const host = criarHostPdfTemporario()
+  const page = construirPaginaPdfBase(root, [], { primeiro, ultimo })
+  host.appendChild(page)
+  const altura = page.scrollHeight
+  host.remove()
+  pdfMeasureCache.base.set(key, altura)
+  return altura
+}
+
+function medirAlturaPaginaComLinha(root, row, primeiro=false){
+  const host = criarHostPdfTemporario()
+  const page = construirPaginaPdfBase(root, [row], { primeiro, ultimo:false })
+  host.appendChild(page)
+  const altura = page.scrollHeight
+  host.remove()
+  return altura
+}
+
+function construirPaginaPdfBase(root, rows, opts={}){
   const { primeiro=false, ultimo=false } = opts
-  const page = document.createElement('div')
-  page.className = 'pdf-root'
+  const page = root.cloneNode(true)
   page.style.width = PDF_PAGE_WIDTH + 'px'
-  page.style.minHeight = '1123px'
-  page.style.padding = '28px 34px'
-  page.style.boxSizing = 'border-box'
+  page.style.height = 'auto'
+  page.style.minHeight = '0px'
+  page.style.overflow = 'visible'
   page.style.background = '#fff'
-  page.style.color = '#111827'
-  page.style.fontFamily = 'Arial,Helvetica,sans-serif'
+  page.style.boxSizing = 'border-box'
 
-  const cabecalho = root.querySelector('.pdf-cabecalho')
-  const resumo = root.querySelector('.pdf-resumo')
-  const tabela = root.querySelector('.pdf-table')
-  const obs = root.querySelector('.pdf-observacoes')
-  const footer = root.querySelector('.pdf-footer')
+  const tbody = page.querySelector('.pdf-table tbody')
+  if (tbody) {
+    tbody.innerHTML = ''
+    rows.forEach(row => tbody.appendChild(row.cloneNode(true)))
+  }
 
-  if (primeiro) {
-    if (cabecalho) page.appendChild(cabecalho.cloneNode(true))
-    if (resumo) page.appendChild(resumo.cloneNode(true))
-  } else {
+  if (!primeiro) {
+    removerCabecalhoResumoDaPagina(page)
     inserirCabecalhoContinuacao(page)
   }
 
-  if (tabela) {
-    const tabelaClone = tabela.cloneNode(true)
-    const tbody = tabelaClone.querySelector('tbody')
-    if (tbody) {
-      tbody.innerHTML = ''
-      rows.forEach(row => tbody.appendChild(row.cloneNode(true)))
-    }
-    page.appendChild(tabelaClone)
-  }
-
-  if (ultimo && obs) page.appendChild(obs.cloneNode(true))
-  if (ultimo && footer) page.appendChild(footer.cloneNode(true))
-
-  if (!primeiro) removerCabecalhoResumoDaPagina(page)
   if (!ultimo) {
-    const obsPage = page.querySelector('.pdf-observacoes')
-    if (obsPage) obsPage.remove()
-    const footerPage = page.querySelector('.pdf-footer')
-    if (footerPage) footerPage.remove()
+    const obs = page.querySelector('.pdf-observacoes')
+    if (obs) obs.remove()
+    const footer = page.querySelector('.pdf-footer')
+    if (footer) footer.remove()
   }
 
+  aplicarExtrasDaPaginaPdf(page, ultimo)
   return page
 }
 
@@ -295,73 +305,41 @@ function montarPaginasPdfEstruturadas(root){
   const rows = Array.from(root.querySelectorAll('.pdf-item-row'))
   if (!rows.length) return [root.cloneNode(true)]
 
-  const host = criarHostPdfTemporario()
   const paginas = []
   let idx = 0
 
   while (idx < rows.length) {
-    const currentRows = []
     const primeiro = paginas.length === 0
-    const limite = PDF_PAGE_HEIGHT - 24
+    const baseHeight = medirAlturaPaginaBase(root, primeiro, false)
+    const pageLimit = PDF_PAGE_HEIGHT - (primeiro ? PDF_PAGE_RESERVED_BOTTOM_FIRST : PDF_PAGE_RESERVED_BOTTOM_OTHER) - 10
+
+    const currentRows = []
+    let usedRowsHeight = 0
 
     while (idx < rows.length) {
-      currentRows.push(rows[idx])
-      const testPage = montarPaginaPdfBase(root, currentRows, { primeiro, ultimo:false })
-      host.innerHTML = ''
-      host.appendChild(testPage)
-      const altura = testPage.scrollHeight
+      const row = rows[idx]
+      const heightWithOneRow = medirAlturaPaginaComLinha(root, row, primeiro)
+      const rowHeight = Math.max(1, heightWithOneRow - baseHeight)
 
-      if (altura > limite) {
-        currentRows.pop()
-        if (!currentRows.length) {
-          currentRows.push(rows[idx])
-          idx++
-        }
+      if (currentRows.length > 0 && baseHeight + usedRowsHeight + rowHeight > pageLimit) {
         break
       }
 
+      currentRows.push(row)
+      usedRowsHeight += rowHeight
+      idx++
+    }
+
+    if (!currentRows.length) {
+      currentRows.push(rows[idx])
       idx++
     }
 
     const ultimo = idx >= rows.length
-    paginas.push(montarPaginaPdfBase(root, currentRows, { primeiro, ultimo }))
+    paginas.push(construirPaginaPdfBase(root, currentRows, { primeiro, ultimo }))
   }
 
-  host.remove()
   return paginas
-}
-
-function addCanvasToPdf(pdf, canvas, margin, usableWidth, usableHeight, firstPage){
-  const imgWidth = canvas.width
-  const imgHeight = canvas.height
-  const ratio = imgWidth / usableWidth
-  const pageSliceHeightPx = Math.floor(usableHeight * ratio)
-
-  if (imgHeight <= pageSliceHeightPx) {
-    const finalHeight = imgHeight / ratio
-    if (!firstPage) pdf.addPage()
-    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, margin, usableWidth, finalHeight, undefined, 'FAST')
-    return
-  }
-
-  let renderedHeightPx = 0
-  let pageIndex = 0
-  while (renderedHeightPx < imgHeight) {
-    const sliceHeightPx = Math.min(pageSliceHeightPx, imgHeight - renderedHeightPx)
-    const sliceCanvas = document.createElement('canvas')
-    sliceCanvas.width = imgWidth
-    sliceCanvas.height = sliceHeightPx
-    const ctx = sliceCanvas.getContext('2d')
-    ctx.drawImage(canvas, 0, renderedHeightPx, imgWidth, sliceHeightPx, 0, 0, imgWidth, sliceHeightPx)
-
-    const data = sliceCanvas.toDataURL('image/png')
-    const drawHeight = sliceHeightPx / ratio
-    if (pageIndex > 0 || !firstPage) pdf.addPage()
-    pdf.addImage(data, 'PNG', margin, margin, usableWidth, drawHeight, undefined, 'FAST')
-
-    renderedHeightPx += sliceHeightPx
-    pageIndex += 1
-  }
 }
 
 async function gerarPdfBytesDoHtml(html){
@@ -375,7 +353,7 @@ async function gerarPdfBytesDoHtml(html){
     }
 
     const root = area.firstElementChild
-    const structured = !!(root && root.querySelector && root.querySelector('.pdf-item-row'))
+    const structured = root && root.querySelector && root.querySelector('.pdf-item-row')
     const { jsPDF } = window.jspdf
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true })
     const pageWidth = pdf.internal.pageSize.getWidth()
@@ -384,18 +362,21 @@ async function gerarPdfBytesDoHtml(html){
     const usableWidth = pageWidth - (margin * 2)
     const usableHeight = pageHeight - (margin * 2)
 
-    const renderNode = async (node) => {
-      const canvas = await html2canvas(node, {
+    const renderPageToPdf = async (pageEl, firstPage=false) => {
+      const canvas = await html2canvas(pageEl, {
         scale: 2,
         useCORS: true,
         backgroundColor: '#ffffff',
         logging: false,
-        width: node.scrollWidth,
-        height: node.scrollHeight,
-        windowWidth: node.scrollWidth,
-        windowHeight: node.scrollHeight
+        width: pageEl.scrollWidth,
+        height: pageEl.scrollHeight,
+        windowWidth: pageEl.scrollWidth,
+        windowHeight: pageEl.scrollHeight
       })
-      return canvas
+      const imgData = canvas.toDataURL('image/png')
+      const imgHeight = (canvas.height * usableWidth) / canvas.width
+      if (!firstPage) pdf.addPage()
+      pdf.addImage(imgData, 'PNG', margin, margin, usableWidth, Math.min(imgHeight, usableHeight), undefined, 'FAST')
     }
 
     if (structured) {
@@ -403,14 +384,33 @@ async function gerarPdfBytesDoHtml(html){
       for (let i = 0; i < paginas.length; i++) {
         area.innerHTML = ''
         area.appendChild(paginas[i])
-        const canvas = await renderNode(paginas[i])
-        addCanvasToPdf(pdf, canvas, margin, usableWidth, usableHeight, i === 0)
+        await renderPageToPdf(paginas[i], i === 0)
       }
       return pdf.output('arraybuffer')
     }
 
-    const canvas = await renderNode(area)
-    addCanvasToPdf(pdf, canvas, margin, usableWidth, usableHeight, true)
+    const canvas = await html2canvas(area, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      width: area.scrollWidth,
+      height: area.scrollHeight,
+      windowWidth: area.scrollWidth,
+      windowHeight: area.scrollHeight
+    })
+    const imgData = canvas.toDataURL('image/png')
+    const imgHeight = (canvas.height * usableWidth) / canvas.width
+    let heightLeft = imgHeight
+    let position = margin
+    pdf.addImage(imgData, 'PNG', margin, position, usableWidth, imgHeight, undefined, 'FAST')
+    heightLeft -= usableHeight
+    while (heightLeft > 0) {
+      position = margin - (imgHeight - heightLeft)
+      pdf.addPage()
+      pdf.addImage(imgData, 'PNG', margin, position, usableWidth, imgHeight, undefined, 'FAST')
+      heightLeft -= usableHeight
+    }
     return pdf.output('arraybuffer')
   } finally {
     area.innerHTML = previous
@@ -438,7 +438,7 @@ function montarHtmlPedidoPdf(p){
   const total = Number(p.total || 0)
   const itens = (p.itens || []).map(it => `
       <tr class="pdf-item-row">
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top">
+        <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top">
           <div style="font-weight:700">${escapeHtml(it.nome)}</div>
           ${it.obs ? `<div style="margin-top:3px;color:#4b5563;font-size:12px">Obs.: ${escapeHtml(it.obs)}</div>` : ''}
         </td>
@@ -449,7 +449,7 @@ function montarHtmlPedidoPdf(p){
   const notaInfo = p.nota?.name ? `<span style="display:inline-block;padding:6px 10px;border-radius:999px;background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;margin-left:8px;font-size:12px">Nota anexada</span>` : ''
   return `
     <div class="pdf-root" style="width:794px;min-height:1123px;padding:28px 34px;box-sizing:border-box;background:#fff;color:#111827;font-family:Arial,Helvetica,sans-serif">
-      <div class="pdf-cabecalho" style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px">
         <div style="display:flex;gap:14px;align-items:center">
           <div style="width:72px;height:72px;border-radius:18px;overflow:hidden;background:#f3f4f6;border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;flex:0 0 auto">
             <img src="logo.png" alt="Logo" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.style.display='none'">
@@ -470,7 +470,7 @@ function montarHtmlPedidoPdf(p){
         </div>
       </div>
 
-      <div class="pdf-resumo" style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:16px">
         <div style="border:1px solid #e5e7eb;border-radius:16px;padding:14px;background:#fafafa">
           <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;margin-bottom:8px">Cliente</div>
           <div style="font-size:18px;font-weight:700">${escapeHtml(p.cliente || '-')}</div>
@@ -499,10 +499,10 @@ function montarHtmlPedidoPdf(p){
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
             <tr style="background:#0f172a;color:#fff">
-              <th style="text-align:left;padding:12px 10px">Produto</th>
-              <th style="text-align:center;padding:12px 10px;width:70px">Qtd</th>
-              <th style="text-align:right;padding:12px 10px;width:120px">Preço</th>
-              <th style="text-align:right;padding:12px 10px;width:130px">Subtotal</th>
+              <th style="text-align:left;padding:8px 10px">Produto</th>
+              <th style="text-align:center;padding:8px 10px;width:70px">Qtd</th>
+              <th style="text-align:right;padding:8px 10px;width:120px">Preço</th>
+              <th style="text-align:right;padding:8px 10px;width:130px">Subtotal</th>
             </tr>
           </thead>
           <tbody>
@@ -1038,13 +1038,13 @@ function montarHtmlDocumento(titulo, numero, cliente, extraInfoHtml, itens, subt
   const itensHtml = (itens || []).map(it => {
     const imagem = getImagemProdutoDoItem(it)
     const imgHtml = imagem ? `
-      <div style="width:100px;height:100px;border-radius:12px;overflow:hidden;background:#f3f4f6;border:1px solid #e5e7eb;flex:0 0 auto">
+      <div style="width:76px;height:76px;border-radius:12px;overflow:hidden;background:#f3f4f6;border:1px solid #e5e7eb;flex:0 0 auto">
         <img src="${escapeHtml(imagem)}" alt="" style="width:100%;height:100%;object-fit:cover" onerror="this.style.display='none'">
       </div>` : `
       <div style="width:54px;height:54px;border-radius:12px;background:#f3f4f6;border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;flex:0 0 auto;color:#94a3b8;font-size:11px">Sem foto</div>`
     return `
       <tr class="pdf-item-row">
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top">
+        <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top">
           <div style="display:flex;gap:10px;align-items:flex-start">
             ${imgHtml}
             <div style="min-width:0">
@@ -1053,9 +1053,9 @@ function montarHtmlDocumento(titulo, numero, cliente, extraInfoHtml, itens, subt
             </div>
           </div>
         </td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:center;vertical-align:top;width:70px">${Number(it.qtd || 0)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;vertical-align:top;width:120px">R$ ${Number(it.preco || 0).toFixed(2)}</td>
-        <td style="padding:10px 8px;border-bottom:1px solid #e5e7eb;text-align:right;vertical-align:top;width:130px">R$ ${(Number(it.preco || 0) * Number(it.qtd || 0)).toFixed(2)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:center;vertical-align:top;width:70px">${Number(it.qtd || 0)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right;vertical-align:top;width:120px">R$ ${Number(it.preco || 0).toFixed(2)}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right;vertical-align:top;width:130px">R$ ${(Number(it.preco || 0) * Number(it.qtd || 0)).toFixed(2)}</td>
       </tr>`
   }).join('')
 
@@ -1064,7 +1064,7 @@ function montarHtmlDocumento(titulo, numero, cliente, extraInfoHtml, itens, subt
 
   return `
     <div class="pdf-root" style="width:794px;min-height:1123px;padding:28px 34px;box-sizing:border-box;background:#fff;color:#111827;font-family:Arial,Helvetica,sans-serif">
-      <div class="pdf-cabecalho" style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px">
+      <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px">
         <div style="display:flex;gap:14px;align-items:center">
           <div style="width:72px;height:72px;border-radius:18px;overflow:hidden;background:#f3f4f6;border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;flex:0 0 auto">
             <img src="logo.png" alt="Logo" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.style.display='none'">
@@ -1084,7 +1084,7 @@ function montarHtmlDocumento(titulo, numero, cliente, extraInfoHtml, itens, subt
         </div>
       </div>
 
-      <div class="pdf-resumo" style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:16px">
         <div style="border:1px solid #e5e7eb;border-radius:16px;padding:14px;background:#fafafa">
           <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;margin-bottom:8px">Cliente</div>
           <div style="font-size:18px;font-weight:700">${escapeHtml(cliente || '-')}</div>
@@ -1101,10 +1101,10 @@ function montarHtmlDocumento(titulo, numero, cliente, extraInfoHtml, itens, subt
         <table style="width:100%;border-collapse:collapse;font-size:13px">
           <thead>
             <tr style="background:#0f172a;color:#fff">
-              <th style="text-align:left;padding:12px 10px">Produto</th>
-              <th style="text-align:center;padding:12px 10px;width:70px">Qtd</th>
-              <th style="text-align:right;padding:12px 10px;width:120px">Preço</th>
-              <th style="text-align:right;padding:12px 10px;width:130px">Subtotal</th>
+              <th style="text-align:left;padding:8px 10px">Produto</th>
+              <th style="text-align:center;padding:8px 10px;width:70px">Qtd</th>
+              <th style="text-align:right;padding:8px 10px;width:120px">Preço</th>
+              <th style="text-align:right;padding:8px 10px;width:130px">Subtotal</th>
             </tr>
           </thead>
           <tbody>
