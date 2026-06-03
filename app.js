@@ -224,9 +224,18 @@ function aplicarExtrasDaPaginaPdf(pageEl, mostrarExtras){
 }
 
 function removerCabecalhoResumoDaPagina(pageEl){
-  const filhos = Array.from(pageEl.children)
-  if (filhos[0]) filhos[0].remove()
-  if (filhos[0]) filhos[0].remove()
+  const cabecalho = pageEl.querySelector('.pdf-cabecalho')
+  const resumo = pageEl.querySelector('.pdf-resumo')
+
+  if (cabecalho) cabecalho.remove()
+  if (resumo) resumo.remove()
+
+  // fallback para PDFs antigos ou outros modelos de documento
+  if (!cabecalho && !resumo) {
+    const filhos = Array.from(pageEl.children)
+    if (filhos[0]) filhos[0].remove()
+    if (filhos[0]) filhos[0].remove()
+  }
 }
 
 function inserirCabecalhoContinuacao(pageEl){
@@ -426,7 +435,7 @@ function montarHtmlPedidoPdf(p){
   const notaInfo = p.nota?.name ? `<span style="display:inline-block;padding:6px 10px;border-radius:999px;background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;margin-left:8px;font-size:12px">Nota anexada</span>` : ''
   return `
     <div class="pdf-root" style="width:794px;min-height:1123px;padding:28px 34px;box-sizing:border-box;background:#fff;color:#111827;font-family:Arial,Helvetica,sans-serif">
-      <div style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px">
+      <div class="pdf-cabecalho" style="display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px">
         <div style="display:flex;gap:14px;align-items:center">
           <div style="width:72px;height:72px;border-radius:18px;overflow:hidden;background:#f3f4f6;border:1px solid #e5e7eb;display:flex;align-items:center;justify-content:center;flex:0 0 auto">
             <img src="logo.png" alt="Logo" style="max-width:100%;max-height:100%;object-fit:contain" onerror="this.style.display='none'">
@@ -447,7 +456,7 @@ function montarHtmlPedidoPdf(p){
         </div>
       </div>
 
-      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:16px">
+      <div class="pdf-resumo" style="display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:16px">
         <div style="border:1px solid #e5e7eb;border-radius:16px;padding:14px;background:#fafafa">
           <div style="font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;margin-bottom:8px">Cliente</div>
           <div style="font-size:18px;font-weight:700">${escapeHtml(p.cliente || '-')}</div>
